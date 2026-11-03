@@ -1,0 +1,15 @@
+# secrets: holds qiewash.appSecret, never commit
+local.properties
+
+# build output
+build/
+.gradle/
+.kotlin/
+captures/
+*.iml
+.idea/
+.DS_Store
+
+# signing material
+*.jks
+*.keystore
