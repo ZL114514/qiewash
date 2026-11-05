@@ -106,12 +106,12 @@ fun QieWashTheme(
 }
 
 /**
- * Roboto Flex subset (digits + colon) with the wght axis kept, so the countdown can
- * actually morph between weights instead of snapping to the two static ones.
+ * Roboto Flex subset (digits + colon) with the wght axis kept. One entry per 10 units
+ * makes the weight read as continuous while still letting Compose cache typefaces.
  */
 @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
 val ClockFamily = FontFamily(
-    (200..900 step 50).map { w ->
+    (200..900 step 10).map { w ->
         Font(
             R.font.clock_var,
             weight = FontWeight(w),

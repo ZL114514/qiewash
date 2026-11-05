@@ -114,6 +114,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -413,7 +414,7 @@ private fun SectionHeader(
     onRefresh: (() -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp),
+        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -737,11 +738,12 @@ fun RunningScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(12.dp))
-        Text(
-            text,
-            fontSize = 72.sp,
-            fontWeight = FontWeight.SemiBold,
+        ClockText(
+            text = text,
+            weight = 600f,
+            style = TextStyle(fontSize = 72.sp),
             color = MaterialTheme.colorScheme.primary,
+            introKey = orderNo,
         )
         Text(
             if (remain == 0L) "本次已结束，可以取衣" else "结束后自动停机计费",
@@ -875,7 +877,7 @@ private fun MonthHeader(g: AppViewModel.OrderMonth, partial: Boolean) {
     Row(
         Modifier.fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
-            .padding(top = 14.dp, bottom = 6.dp),
+            .padding(top = 14.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -1326,11 +1328,7 @@ private fun ActiveRunCard(
     val span = (run.endAt - run.startAt).coerceAtLeast(1L)
     val progress = (left.toFloat() / span).coerceIn(0f, 1f)
     // M3E variable weight: light while there is time, heavy as the drum winds down.
-    val weight by animateFloatAsState(
-        targetValue = 320f + (1f - progress) * 580f,
-        animationSpec = tween(600),
-        label = "wght",
-    )
+    val weight = 320f + (1f - progress) * 580f
     val label = when {
         finished -> "${((-rawLeft) / 60_000L).coerceAtLeast(0)} 分前"
         left >= 3_600_000 -> "%d 时 %02d 分".format(left / 3_600_000, left % 3_600_000 / 60_000)
@@ -1364,18 +1362,12 @@ private fun ActiveRunCard(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                label,
-                style = MaterialTheme.typography.displaySmall.copy(
-                    fontFamily = ClockFamily,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight(
-                        (weight / 50f).roundToInt() * 50
-                    ),
-                ),
+            ClockText(
+                text = label,
+                weight = weight,
+                style = MaterialTheme.typography.displaySmall,
                 color = onContainer,
-                maxLines = 1,
-                softWrap = false,
-                letterSpacing = (-1).sp,
+                introKey = run.orderNo,
             )
         }
     }

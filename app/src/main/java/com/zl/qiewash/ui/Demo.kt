@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -21,6 +22,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -33,7 +35,8 @@ import kotlin.math.roundToInt
 @Composable
 fun WeightDemoScreen(onBack: () -> Unit) {
     var wght by remember { mutableFloatStateOf(400f) }
-    val snapped = ((wght / 50f).roundToInt() * 50).coerceIn(200, 900)
+    var replay by remember { mutableIntStateOf(0) }
+    val snapped = wght.roundToInt()
 
     Scaffold(
         topBar = {
@@ -57,12 +60,14 @@ fun WeightDemoScreen(onBack: () -> Unit) {
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
-            Text(
-                "30:21",
-                style = MaterialTheme.typography.displayLarge.copy(
-                    fontFamily = ClockFamily,
-                    fontWeight = FontWeight(snapped),
-                ),
+            ClockText(
+                text = "30:21",
+                weight = wght,
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                introKey = replay,
+                introFrom = 950f,
+                introMs = 1200,
             )
             Text(
                 "Roboto Flex（子集，含 wght 轴）",
@@ -88,10 +93,13 @@ fun WeightDemoScreen(onBack: () -> Unit) {
             Slider(
                 value = wght,
                 onValueChange = { wght = it },
-                valueRange = 200f..900f,
-                steps = 13,
+                valueRange = 200f..950f,
                 modifier = Modifier.fillMaxWidth(),
             )
+            FilledTonalButton(
+                onClick = { replay++ },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("重播展示动画") }
         }
     }
 }
