@@ -120,6 +120,23 @@ class Session(ctx: Context) {
         get() = sp.getString("lng", "").orEmpty()
         set(v) = sp.edit().putString("lng", v).apply()
 
+    /** The run currently believed to be in flight; survives restarts so the banner/notification resume. */
+    var runOrderNo: String
+        get() = sp.getString("runOrderNo", "").orEmpty()
+        set(v) = sp.edit().putString("runOrderNo", v).apply()
+
+    var runTitle: String
+        get() = sp.getString("runTitle", "").orEmpty()
+        set(v) = sp.edit().putString("runTitle", v).apply()
+
+    var runGoodsId: String
+        get() = sp.getString("runGoodsId", "").orEmpty()
+        set(v) = sp.edit().putString("runGoodsId", v).apply()
+
+    var runEndAt: Long
+        get() = sp.getLong("runEndAt", 0L)
+        set(v) = sp.edit().putLong("runEndAt", v).apply()
+
     /** How far the nearby scan looks around each known machine id. */
     var spread: Int
         get() = sp.getInt("spread", 20)

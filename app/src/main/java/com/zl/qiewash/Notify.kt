@@ -45,12 +45,12 @@ object Notify {
     )
 
     /** Live countdown; asks the system to promote it into the status-bar island. */
-    fun live(ctx: Context, title: String, endAt: Long) {
+    fun live(ctx: Context, title: String, endAt: Long, leftMs: Long = endAt - System.currentTimeMillis()) {
         ensureChannels(ctx)
         val b = NotificationCompat.Builder(ctx, CH_LIVE)
             .setSmallIcon(R.drawable.ic_notify_wash)
             .setContentTitle(title)
-            .setContentText("结束时间 " + timeText(endAt))
+            .setContentText("结束于 " + timeText(endAt))
             .setWhen(endAt)
             .setUsesChronometer(true)
             .setChronometerCountDown(true)
@@ -68,14 +68,20 @@ object Notify {
         b.setStyle(style)
         b.setRequestPromotedOngoing(true)
         if (Build.VERSION.SDK_INT >= 36) {
-            runCatching { b.setShortCriticalText(shortText(endAt)) }
+            runCatching { b.setShortCriticalText(leftText(leftMs)) }
         }
         post(ctx, ID_LIVE, b.build())
     }
 
-    private fun shortText(endAt: Long): String {
-        val left = ((endAt - System.currentTimeMillis()) / 60_000L).coerceAtLeast(0)
-        return if (left > 0) "剩 $left 分" else "即将结束"
+    /** The island and the collapsed row both read this, so it has to be refreshed by the caller. */
+    fun leftText(leftMs: Long): String {
+        val mins = (leftMs / 60_000L).coerceAtLeast(0)
+        return when {
+            leftMs <= 0 -> "即将结束"
+            mins >= 60 -> "剩 %d 时 %02d 分".format(mins / 60, mins % 60)
+            mins > 0 -> "剩 $mins 分"
+            else -> "剩不到 1 分"
+        }
     }
 
     fun cancelLive(ctx: Context) {

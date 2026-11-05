@@ -3,6 +3,11 @@ package com.zl.qiewash.ui
 import com.zl.qiewash.Notify
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.rememberScrollState
@@ -252,6 +257,8 @@ fun HomeScreen(
     onOrders: () -> Unit,
     onRefreshNearby: () -> Unit,
     onSettings: () -> Unit,
+    active: AppViewModel.ActiveRun?,
+    onOpenActive: () -> Unit,
     busy: Boolean,
 ) {
     Scaffold(
@@ -277,13 +284,27 @@ fun HomeScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp + navBottom),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
+            item(key = "active") {
+                // Banner and scan hero are one group: big top, small bottom for the banner,
+                // small top + big bottom for the hero. Animates when a run starts or ends.
+                AnimatedVisibility(
+                    visible = active != null,
+                    enter = expandVertically(tween(240)) + fadeIn(tween(180)),
+                    exit = shrinkVertically(tween(200)) + fadeOut(tween(120)),
+                ) {
+                    active?.let {
+                        ActiveRunCard(it, onOpenActive, shape = QwShape.group(0, 2, big = 32.dp))
+                    }
+                }
+            }
+
             item {
                 Surface(
-                    shape = QwShape.hero,
+                    shape = if (active != null) QwShape.group(1, 2, big = 32.dp) else QwShape.hero,
                     onClick = onScan,
                     enabled = !busy,
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.fillMaxWidth().height(180.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = if (active != null) 2.dp else 0.dp).height(180.dp),
                 ) {
                     Column(
                         Modifier.fillMaxSize(),
@@ -1259,5 +1280,59 @@ private fun PermissionRow(
             )
         }
         if (!ok) TextButton(onClick = onClick) { Text(action) }
+    }
+}
+
+/** Banner for the machine in use; survives leaving the running screen. */
+@Composable
+private fun ActiveRunCard(
+    run: AppViewModel.ActiveRun,
+    onClick: () -> Unit,
+    shape: androidx.compose.ui.graphics.Shape,
+    modifier: Modifier = Modifier,
+) {
+    var now by remember(run.endAt) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(run.endAt) {
+        while (true) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+    val left = (run.endAt - now).coerceAtLeast(0)
+    val label = when {
+        left <= 0 -> "即将结束"
+        left >= 3_600_000 -> "%d 时 %02d 分".format(left / 3_600_000, left % 3_600_000 / 60_000)
+        else -> "%d:%02d".format(left / 60_000, left % 60_000 / 1000)
+    }
+    Surface(
+        onClick = onClick,
+        shape = shape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MachineIcon("00", MaterialTheme.colorScheme.onPrimaryContainer)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "正在使用",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                )
+                Text(
+                    run.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
     }
 }

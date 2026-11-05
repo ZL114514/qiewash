@@ -50,6 +50,9 @@ class AppViewModel : ViewModel() {
     var payType by mutableStateOf(13)
     var orderNo by mutableStateOf("")
     var endAt by mutableStateOf(0L)
+
+    /** The machine this account is currently using, possibly resumed after a restart. */
+    var activeRun by mutableStateOf<ActiveRun?>(null)
     var payStep by mutableStateOf("")
 
     // orders page (manual paging + pull to refresh)
@@ -192,6 +195,14 @@ class AppViewModel : ViewModel() {
     }
 
     // Position used by the order risk signature; editable in settings.
+    data class ActiveRun(
+        val orderNo: String,
+        val title: String,
+        val deviceName: String,
+        val goodsId: String,
+        val endAt: Long,
+    )
+
     var lat by mutableStateOf("")
     var lng by mutableStateOf("")
     var spread by mutableStateOf(20)
@@ -465,6 +476,16 @@ class AppViewModel : ViewModel() {
 
                 val mins = if (state.minutes > 0) state.minutes else o.minutes
                 endAt = System.currentTimeMillis() + mins * 60_000L
+                val run = ActiveRun(
+                    orderNo = order,
+                    title = listOfNotNull(device?.name?.takeIf { it.isNotBlank() }, sku?.name)
+                        .joinToString(" · ").ifBlank { "洗衣" },
+                    deviceName = device?.name.orEmpty(),
+                    goodsId = device?.goodsId.orEmpty(),
+                    endAt = endAt,
+                )
+                activeRun = run
+                saveRun(run)
                 payStep = ""
                 go(Stage.RUNNING)
             } catch (e: SessionExpired) {
@@ -481,7 +502,89 @@ class AppViewModel : ViewModel() {
         }
     }
 
+    /** Re-reads the run from the server so a restart (or a second device) shows the same banner. */
+    fun resumeActiveRun() {
+        viewModelScope.launch {
+            val saved = session?.runEndAt ?: 0L
+            val savedRun = ActiveRun(
+                orderNo = session?.runOrderNo.orEmpty(),
+                title = session?.runTitle.orEmpty().ifBlank { "洗衣" },
+                deviceName = session?.runTitle.orEmpty().substringBefore(" · "),
+                goodsId = session?.runGoodsId.orEmpty(),
+                endAt = saved,
+            )
+            val briefs = runCatching { repo.orders(1, 20) }.getOrDefault(emptyList())
+            val live = briefs.firstOrNull { it.status == 2 }
+            if (live != null) {
+                val detail = runCatching { repo.orderDetail(live.orderNo) }.getOrNull()
+                val start = parseTime(detail?.payTime) ?: parseTime(live.createTime) ?: System.currentTimeMillis()
+                val mins = detail?.minutes?.takeIf { it > 0 } ?: live.minutes
+                val run = ActiveRun(
+                    orderNo = live.orderNo,
+                    title = listOfNotNull(live.machineName.takeIf { it.isNotBlank() }, live.functionName)
+                        .joinToString(" · ").ifBlank { savedRun.title },
+                    deviceName = live.machineName,
+                    goodsId = savedRun.goodsId.takeIf { it.isNotBlank() }.orEmpty(),
+                    endAt = start + mins * 60_000L,
+                )
+                activeRun = run
+                saveRun(run)
+                Diag.log("active run resumed ${run.orderNo} left=${(run.endAt - System.currentTimeMillis()) / 60000}m")
+                return@launch
+            }
+            if (saved > System.currentTimeMillis()) {
+                activeRun = savedRun
+                Diag.log("active run from prefs left=${(saved - System.currentTimeMillis()) / 60000}m")
+            } else {
+                activeRun = null
+                saveRun(null)
+            }
+        }
+    }
+
+    private fun parseTime(text: String?): Long? {
+        val t = text?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching {
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).parse(t)?.time
+        }.getOrNull()
+    }
+
+    private fun saveRun(run: ActiveRun?) {
+        val s = session ?: return
+        if (run == null) {
+            s.runOrderNo = ""
+            s.runTitle = ""
+            s.runGoodsId = ""
+            s.runEndAt = 0L
+        } else {
+            s.runOrderNo = run.orderNo
+            s.runTitle = run.title
+            s.runGoodsId = run.goodsId
+            s.runEndAt = run.endAt
+        }
+    }
+
+    /** Jump back into the banner's run; the plan screen needs the device, so re-read it. */
+    fun openActiveRun() {
+        val run = activeRun ?: return
+        action {
+            if (device?.goodsId != run.goodsId && run.goodsId.isNotBlank()) {
+                device = repo.details(run.goodsId)
+            }
+            orderNo = run.orderNo
+            endAt = run.endAt
+            go(Stage.RUNNING)
+        }
+    }
+
+    /** Clears the run after it ended (or was abandoned). */
+    fun clearActiveRun() {
+        activeRun = null
+        saveRun(null)
+    }
+
     fun finishRun() {
+        clearActiveRun()
         go(Stage.HOME)
         orderNo = ""
         endAt = 0
@@ -513,6 +616,7 @@ class AppViewModel : ViewModel() {
             runCatching { devices = repo.latestUsed() }
             loadStatuses()
             loadNearby()
+            resumeActiveRun()
         }
     }
 

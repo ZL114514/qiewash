@@ -111,26 +111,27 @@ private fun AppNav(vm: AppViewModel) {
     // The ViewModel only requests a destination; the NavHost owns the actual stack,
     // so the system back gesture (and its predictive-back preview) works per level.
     val ctx = LocalContext.current
-    var wasRunning by remember { mutableStateOf(false) }
-    LaunchedEffect(vm.stage, vm.endAt) {
-        val running = vm.stage == Stage.RUNNING && vm.endAt > 0
-        if (running) {
-            val title = listOfNotNull(vm.device?.name?.takeIf { it.isNotBlank() }, vm.sku?.name)
-                .joinToString(" · ").ifBlank { "洗衣进行中" }
-            Notify.live(ctx, title, vm.endAt)
-            Notify.scheduleEnd(ctx, vm.endAt, "${vm.device?.name.orEmpty()} 已结束，记得取衣")
-        } else {
+    // One effect owns the live notification: it keeps ticking while a run is in flight,
+    // survives leaving the running screen, and only fires "done" when the clock runs out.
+    LaunchedEffect(vm.activeRun?.orderNo, vm.activeRun?.endAt) {
+        val run = vm.activeRun
+        if (run == null) {
             Notify.cancelLive(ctx)
             Notify.cancelEnd(ctx)
+            return@LaunchedEffect
         }
-    }
-    LaunchedEffect(vm.stage) {
-        if (wasRunning && vm.stage != Stage.RUNNING) {
-            val title = listOfNotNull(vm.device?.name?.takeIf { it.isNotBlank() }, vm.sku?.name)
-                .joinToString(" · ").ifBlank { "洗衣" }
-            Notify.done(ctx, "$title 已结束，记得取衣")
+        while (true) {
+            val left = run.endAt - System.currentTimeMillis()
+            if (left <= 0) {
+                Notify.done(ctx, "${run.title} 已结束，记得取衣")
+                Notify.cancelEnd(ctx)
+                vm.clearActiveRun()
+                break
+            }
+            Notify.live(ctx, run.title, run.endAt, left)
+            Notify.scheduleEnd(ctx, run.endAt, "${run.title} 已结束，记得取衣")
+            kotlinx.coroutines.delay(30_000)
         }
-        wasRunning = vm.stage == Stage.RUNNING
     }
     LaunchedEffect(vm.navTarget) {
         val target = vm.navTarget ?: return@LaunchedEffect
@@ -170,6 +171,8 @@ private fun AppNav(vm: AppViewModel) {
                 onOrders = { vm.openOrders() },
                 onRefreshNearby = { vm.loadNearby(force = true) },
                 onSettings = { vm.openSettings() },
+                active = vm.activeRun,
+                onOpenActive = { vm.openActiveRun() },
                 busy = vm.busy,
             )
         }
