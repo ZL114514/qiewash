@@ -133,6 +133,10 @@ class Session(ctx: Context) {
         get() = sp.getString("runGoodsId", "").orEmpty()
         set(v) = sp.edit().putString("runGoodsId", v).apply()
 
+    var runStartAt: Long
+        get() = sp.getLong("runStartAt", 0L)
+        set(v) = sp.edit().putLong("runStartAt", v).apply()
+
     var runEndAt: Long
         get() = sp.getLong("runEndAt", 0L)
         set(v) = sp.edit().putLong("runEndAt", v).apply()

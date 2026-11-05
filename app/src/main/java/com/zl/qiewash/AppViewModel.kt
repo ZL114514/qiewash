@@ -195,12 +195,18 @@ class AppViewModel : ViewModel() {
     }
 
     // Position used by the order risk signature; editable in settings.
+    companion object {
+        /** How long a finished run keeps its pill (and the "collect it" nudge). */
+        const val GRACE_MS = 5 * 60_000L
+    }
+
     data class ActiveRun(
         val orderNo: String,
         val title: String,
         val deviceName: String,
         val goodsId: String,
         val endAt: Long,
+        val startAt: Long = endAt,
     )
 
     var lat by mutableStateOf("")
@@ -346,6 +352,11 @@ class AppViewModel : ViewModel() {
 
     fun openSettings() { go(Stage.SETTINGS) }
 
+    fun dropExpiredRun() {
+        val run = activeRun ?: return
+        if (System.currentTimeMillis() > run.endAt + GRACE_MS) clearActiveRun()
+    }
+
     fun reopenLocation() { go(Stage.LOCATION) }
 
     val diagPath: String get() = Diag.filePath()
@@ -483,6 +494,7 @@ class AppViewModel : ViewModel() {
                     deviceName = device?.name.orEmpty(),
                     goodsId = device?.goodsId.orEmpty(),
                     endAt = endAt,
+                    startAt = endAt - mins * 60_000L,
                 )
                 activeRun = run
                 saveRun(run)
@@ -512,6 +524,7 @@ class AppViewModel : ViewModel() {
                 deviceName = session?.runTitle.orEmpty().substringBefore(" · "),
                 goodsId = session?.runGoodsId.orEmpty(),
                 endAt = saved,
+                startAt = session?.runStartAt ?: saved,
             )
             val briefs = runCatching { repo.orders(1, 20) }.getOrDefault(emptyList())
             val live = briefs.firstOrNull { it.status == 2 }
@@ -526,13 +539,16 @@ class AppViewModel : ViewModel() {
                     deviceName = live.machineName,
                     goodsId = savedRun.goodsId.takeIf { it.isNotBlank() }.orEmpty(),
                     endAt = start + mins * 60_000L,
+                    startAt = start,
                 )
                 activeRun = run
                 saveRun(run)
                 Diag.log("active run resumed ${run.orderNo} left=${(run.endAt - System.currentTimeMillis()) / 60000}m")
                 return@launch
             }
-            if (saved > System.currentTimeMillis()) {
+            // Keep a just-finished run around for a few minutes: the pill turns red and
+            // reminds you to collect the laundry.
+            if (saved > System.currentTimeMillis() - GRACE_MS) {
                 activeRun = savedRun
                 Diag.log("active run from prefs left=${(saved - System.currentTimeMillis()) / 60000}m")
             } else {
@@ -556,11 +572,13 @@ class AppViewModel : ViewModel() {
             s.runTitle = ""
             s.runGoodsId = ""
             s.runEndAt = 0L
+            s.runStartAt = 0L
         } else {
             s.runOrderNo = run.orderNo
             s.runTitle = run.title
             s.runGoodsId = run.goodsId
             s.runEndAt = run.endAt
+            s.runStartAt = run.startAt
         }
     }
 

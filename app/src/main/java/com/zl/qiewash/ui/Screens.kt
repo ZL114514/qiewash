@@ -7,6 +7,19 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
+import com.zl.qiewash.R
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.ui.unit.lerp
+import kotlin.math.roundToInt
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -34,6 +47,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -297,7 +312,7 @@ fun HomeScreen(
                         // A pill needs breathing room from the card below it.
                         ActiveRunCard(
                             it, onOpenActive, shape = CircleShape,
-                            modifier = Modifier.padding(bottom = 4.dp),
+                            modifier = Modifier.padding(bottom = 6.dp),
                         )
                     }
                 }
@@ -341,30 +356,12 @@ fun HomeScreen(
                 // Two categories only, so this is a pair of toggles rather than a 3-way picker:
                 // both on = everything, one on = that kind, tapping the lone one restores both.
                 val options = listOf("00" to "洗衣机", "02" to "烘干机")
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    options.forEachIndexed { i, (value, label) ->
-                        val on = deviceFilter.isEmpty() || deviceFilter == value
-                        Surface(
-                            onClick = { onFilter(if (deviceFilter == value) "" else value) },
-                            shape = segShape(i, options.size),
-                            color = if (on) MaterialTheme.colorScheme.secondaryContainer
-                            else MaterialTheme.colorScheme.surfaceContainerHigh,
-                            modifier = Modifier.weight(1f).height(38.dp),
-                        ) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    label,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (on) MaterialTheme.colorScheme.onSecondaryContainer
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
+                SegmentedRow(
+                    options = options,
+                    isOn = { deviceFilter.isEmpty() || deviceFilter == it },
+                    onPick = { v -> onFilter(if (deviceFilter == v) "" else v) },
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
 
             item(key = "sec-nearby") {
@@ -384,6 +381,7 @@ fun HomeScreen(
                         live = info.live,
                         shape = QwShape.group(i, nearby.size),
                         onClick = { onOpen(info.device.goodsId) },
+                        modifier = Modifier.animateItem(),
                     )
                 }
             }
@@ -398,6 +396,7 @@ fun HomeScreen(
                         live = live[d.goodsId],
                         shape = QwShape.group(i, devices.size),
                         onClick = { onOpen(d.goodsId) },
+                        modifier = Modifier.animateItem(),
                     )
                 }
             }
@@ -446,12 +445,13 @@ private fun DeviceRow(
     live: Repo.Live?,
     shape: androidx.compose.ui.graphics.Shape,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -801,14 +801,12 @@ fun OrdersScreen(
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         val count = groups.sumOf { it.count }
         Column(Modifier.padding(top = pad.calculateTopPadding()).fillMaxSize().clipToBounds()) {
-            Row(
-                Modifier.padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                listOf("" to "全部", "2" to "使用中", "3" to "已完成", "1" to "已失效").forEach { (v, label) ->
-                    FilterChip(selected = filter == v, onClick = { onFilter(v) }, label = { Text(label) })
-                }
-            }
+            SegmentedRow(
+                options = listOf("" to "全部", "2" to "使用中", "3" to "已完成", "1" to "已失效"),
+                isOn = { filter == it },
+                onPick = onFilter,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
 
             val listState = rememberLazyListState()
             val nearEnd by remember(count) {
@@ -1318,40 +1316,64 @@ private fun ActiveRunCard(
             kotlinx.coroutines.delay(1000)
         }
     }
-    val left = (run.endAt - now).coerceAtLeast(0)
+    val rawLeft = run.endAt - now
+    val finished = rawLeft <= 0
+    val left = rawLeft.coerceAtLeast(0)
+    val span = (run.endAt - run.startAt).coerceAtLeast(1L)
+    val progress = (left.toFloat() / span).coerceIn(0f, 1f)
+    // M3E variable weight: lighter while there is time, heavier as the drum winds down.
+    val weight by animateFloatAsState(
+        targetValue = 420f + (1f - progress) * 380f,
+        animationSpec = tween(600),
+        label = "wght",
+    )
     val label = when {
-        left <= 0 -> "即将结束"
+        finished -> "${((-rawLeft) / 60_000L).coerceAtLeast(0)} 分前"
         left >= 3_600_000 -> "%d 时 %02d 分".format(left / 3_600_000, left % 3_600_000 / 60_000)
         else -> "%d:%02d".format(left / 60_000, left % 60_000 / 1000)
     }
+    val container = if (finished) MaterialTheme.colorScheme.errorContainer
+    else MaterialTheme.colorScheme.primary
+    val onContainer = if (finished) MaterialTheme.colorScheme.onErrorContainer
+    else MaterialTheme.colorScheme.onPrimary
     Surface(
         onClick = onClick,
         shape = shape,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = container,
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MachineIcon("00", MaterialTheme.colorScheme.onPrimaryContainer)
+            MachineIcon("00", onContainer)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    "正在使用",
+                    if (finished) "已完成 · 记得取衣" else "正在使用",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                    color = onContainer.copy(alpha = 0.7f),
                 )
                 Text(
                     run.title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = onContainer,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
             }
             Text(
                 label,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                style = MaterialTheme.typography.displaySmall.copy(
+                    fontFamily = ClockFamily,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight(
+                        (weight / 50f).roundToInt() * 50
+                    ),
+                ),
+                color = onContainer,
+                maxLines = 1,
+                softWrap = false,
+                letterSpacing = (-1).sp,
             )
         }
     }
@@ -1365,3 +1387,97 @@ private fun segShape(index: Int, count: Int): androidx.compose.ui.graphics.Shape
     val end = if (index == count - 1) big else small
     return RoundedCornerShape(start, end, end, start)
 }
+
+/**
+ * M3E button group: at rest the segments merge into one container (outer ends round,
+ * joints tight). While any segment is touched the joints open up and the pressed
+ * segment widens, then it settles back — the same shape morph the official group does.
+ */
+@Composable
+private fun SegmentedRow(
+    options: List<Pair<String, String>>,
+    isOn: (String) -> Boolean,
+    onPick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val big = 22.dp
+    val tight = 8.dp
+    val sources = remember(options.size) { List(options.size) { MutableInteractionSource() } }
+    val pressed = sources.map { it.collectIsPressedAsState().value }
+    val anyPressed = pressed.any { it }
+
+    // A tap can be shorter than one frame, so the morph is driven by an explicit
+    // kick animation on click instead of following the press state.
+    val morph = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var kicked by remember { mutableStateOf(-1) }
+    fun kick(index: Int) {
+        kicked = index
+        scope.launch {
+            morph.snapTo(0f)
+            morph.animateTo(1f, tween(120))
+            morph.animateTo(0f, tween(240))
+        }
+    }
+    val joint = tight
+    val hold by animateFloatAsState(
+        targetValue = if (anyPressed) 1f else 0f,
+        animationSpec = tween(90),
+        label = "hold",
+    )
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        options.forEachIndexed { i, (value, label) ->
+            val on = isOn(value)
+            val pulse = when {
+                kicked == i -> morph.value
+                pressed[i] -> hold
+                else -> 0f
+            }
+            val grow = 1f + 0.14f * pulse
+            val bg by animateColorAsState(
+                targetValue = if (on) MaterialTheme.colorScheme.secondaryContainer
+                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                animationSpec = tween(220),
+                label = "bg",
+            )
+            val fg by animateColorAsState(
+                targetValue = if (on) MaterialTheme.colorScheme.onSecondaryContainer
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = tween(220),
+                label = "fg",
+            )
+            val startR = if (i == 0) big else joint
+            val endR = if (i == options.lastIndex) big else joint
+            Surface(
+                onClick = {
+                    kick(i)
+                    onPick(value)
+                },
+                interactionSource = sources[i],
+                shape = RoundedCornerShape(startR, endR, endR, startR),
+                color = bg,
+                modifier = Modifier.weight(grow).height(40.dp),
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(label, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Roboto Flex subset (digits + colon) with the wght axis kept, so the countdown can
+ * actually morph between weights instead of snapping to the two static ones.
+ */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private val ClockFamily = FontFamily(
+    (200..900 step 50).map { w ->
+        Font(
+            R.font.clock_var,
+            weight = FontWeight(w),
+            style = FontStyle.Normal,
+            variationSettings = FontVariation.Settings(FontVariation.weight(w)),
+        )
+    }
+)
