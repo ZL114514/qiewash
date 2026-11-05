@@ -98,7 +98,7 @@ class Repo {
         goodsId = d.optString("goodsId"),
         name = d.optString("name"),
         categoryCode = d.optString("categoryCode"),
-        categoryName = d.optString("orgName").ifBlank { categoryName("", d.optString("categoryCode")) },
+        categoryName = categoryName(d.optString("orgName"), d.optString("categoryCode")),
         shopId = d.optString("shopId").ifBlank { d.optString("orgId") },
         orgId = d.optString("orgId"),
         imei = d.optString("imei"),

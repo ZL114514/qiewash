@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -293,18 +294,22 @@ fun HomeScreen(
                     exit = shrinkVertically(tween(200)) + fadeOut(tween(120)),
                 ) {
                     active?.let {
-                        ActiveRunCard(it, onOpenActive, shape = QwShape.group(0, 2, big = 32.dp))
+                        // A pill needs breathing room from the card below it.
+                        ActiveRunCard(
+                            it, onOpenActive, shape = CircleShape,
+                            modifier = Modifier.padding(bottom = 4.dp),
+                        )
                     }
                 }
             }
 
             item {
                 Surface(
-                    shape = if (active != null) QwShape.group(1, 2, big = 32.dp) else QwShape.hero,
+                    shape = QwShape.hero,
                     onClick = onScan,
                     enabled = !busy,
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.fillMaxWidth().padding(top = if (active != null) 2.dp else 0.dp).height(180.dp),
+                    modifier = Modifier.fillMaxWidth().height(180.dp),
                 ) {
                     Column(
                         Modifier.fillMaxSize(),
@@ -333,16 +338,31 @@ fun HomeScreen(
             }
 
             item(key = "filters") {
+                // Two categories only, so this is a pair of toggles rather than a 3-way picker:
+                // both on = everything, one on = that kind, tapping the lone one restores both.
+                val options = listOf("00" to "洗衣机", "02" to "烘干机")
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Modifier.fillMaxWidth().padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    listOf("" to "全部", "00" to "洗衣机", "02" to "烘干机").forEach { (v, label) ->
-                        FilterChip(
-                            selected = deviceFilter == v,
-                            onClick = { onFilter(v) },
-                            label = { Text(label) },
-                        )
+                    options.forEachIndexed { i, (value, label) ->
+                        val on = deviceFilter.isEmpty() || deviceFilter == value
+                        Surface(
+                            onClick = { onFilter(if (deviceFilter == value) "" else value) },
+                            shape = segShape(i, options.size),
+                            color = if (on) MaterialTheme.colorScheme.secondaryContainer
+                            else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.weight(1f).height(38.dp),
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (on) MaterialTheme.colorScheme.onSecondaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1335,4 +1355,13 @@ private fun ActiveRunCard(
             )
         }
     }
+}
+
+/** Horizontal variant of the grouped-list corners: outer ends round, inner joints tight. */
+private fun segShape(index: Int, count: Int): androidx.compose.ui.graphics.Shape {
+    val big = 20.dp
+    val small = 6.dp
+    val start = if (index == 0) big else small
+    val end = if (index == count - 1) big else small
+    return RoundedCornerShape(start, end, end, start)
 }

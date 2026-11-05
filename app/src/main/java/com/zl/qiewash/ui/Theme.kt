@@ -17,6 +17,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 private val Mint = Color(0xFF006B58)
+
+/** Deep brand green, always dark regardless of theme, for the running banner. */
+val QwDeep = Color(0xFF0B3B2E)
 private val MintLight = Color(0xFF4FD1B0)
 private val Ink = Color(0xFF0B1F1A)
 
