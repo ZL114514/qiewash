@@ -41,6 +41,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1341,7 +1342,9 @@ private fun ActiveRunCard(
     val span = (run.endAt - run.startAt).coerceAtLeast(1L)
     val progress = (left.toFloat() / span).coerceIn(0f, 1f)
     // M3E variable weight: light while there is time, heavy as the drum winds down.
-    val weight = 320f + (1f - progress) * 580f
+    // Weight tracks minutes left: ~240 at 3 min, ~400 at 10 min, capped at 950.
+    val minutesLeft = left / 60_000f
+    val weight = (171f + 22.9f * minutesLeft).coerceIn(200f, 950f)
     val label = when {
         finished -> "${((-rawLeft) / 60_000L).coerceAtLeast(0)} 分前"
         left >= 3_600_000 -> "%d 时 %02d 分".format(left / 3_600_000, left % 3_600_000 / 60_000)
@@ -1412,7 +1415,12 @@ private fun SegmentedRow(
     val morph = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var kicked by remember { mutableIntStateOf(-1) }
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val gap = 2.dp
+        val slots = options.size.coerceAtLeast(1)
+        val baseW = (maxWidth - gap * (slots - 1)) / slots
+        val growMax = 26.dp
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
         options.forEachIndexed { i, (value, label) ->
             val on = isOn(value)
             val bg by animateColorAsState(
@@ -1429,10 +1437,13 @@ private fun SegmentedRow(
             )
             val startR = if (i == 0) big else tight
             val endR = if (i == options.lastIndex) big else tight
-            val pulse = if (kicked == i) morph.value else 0f
+            // The pressed slot takes width from its neighbours instead of the row
+            // re-normalising weights, which is what made the hold look like a quarter.
+            val grow = if (kicked == i) growMax * morph.value else 0.dp
+            val shrink = if (kicked == i) 0.dp else growMax * morph.value / (slots - 1).coerceAtLeast(1)
             Box(
                 Modifier
-                    .weight(1f + 0.16f * pulse)
+                    .width(baseW - shrink + grow)
                     .height(40.dp)
                     .clip(RoundedCornerShape(startR, endR, endR, startR))
                     .background(bg)
@@ -1466,6 +1477,7 @@ private fun SegmentedRow(
             ) {
                 Text(label, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1)
             }
+        }
         }
     }
 }
