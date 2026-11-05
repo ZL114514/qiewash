@@ -44,11 +44,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.MultiFormatReader
-import com.google.zxing.PlanarYUVLuminanceSource
-import com.google.zxing.common.HybridBinarizer
+import com.google.mlkit.vision.barcode.BarcodeScanner
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
 fun ScanScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
@@ -92,6 +94,10 @@ fun ScanScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
     }
 }
 
+/**
+ * ML Kit instead of a hand-rolled ZXing pass: it handles rotation, blur and
+ * inverted codes itself, which is what made the old code miss badly lit labels.
+ */
 @Composable
 private fun CameraPreview(onResult: (String) -> Unit) {
     val ctx = LocalContext.current
@@ -99,56 +105,66 @@ private fun CameraPreview(onResult: (String) -> Unit) {
     val view = remember {
         PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
     }
-    var handled by remember { mutableStateOf(false) }
+    val handled = remember { AtomicBoolean(false) }
 
     DisposableEffect(Unit) {
         val executor = Executors.newSingleThreadExecutor()
         val future = ProcessCameraProvider.getInstance(ctx)
+        val scanner: BarcodeScanner = BarcodeScanning.getClient(
+            BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build()
+        )
         future.addListener({
             runCatching {
                 val provider = future.get()
                 val preview = Preview.Builder().build().also { it.setSurfaceProvider(view.surfaceProvider) }
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setTargetResolution(android.util.Size(1280, 720))
                     .build()
                 analysis.setAnalyzer(executor) { image ->
-                    if (!handled) {
-                        decode(image)?.let { text ->
-                            handled = true
-                            view.post { onResult(text) }
-                        }
+                    if (handled.get()) {
+                        image.close()
+                        return@setAnalyzer
                     }
-                    image.close()
+                    val media = image.image
+                    if (media == null) {
+                        image.close()
+                        return@setAnalyzer
+                    }
+                    val input = InputImage.fromMediaImage(media, image.imageInfo.rotationDegrees)
+                    scanner.process(input)
+                        .addOnSuccessListener { codes ->
+                            val text = codes.firstNotNullOfOrNull { it.rawValue?.takeIf(String::isNotBlank) }
+                            if (text != null && handled.compareAndSet(false, true)) {
+                                view.post { onResult(text) }
+                            }
+                        }
+                        .addOnCompleteListener { image.close() }
                 }
                 provider.unbindAll()
-                provider.bindToLifecycle(
+                val camera = provider.bindToLifecycle(
                     lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis
                 )
+                // Nudge focus once the preview is up; fixed-focus fallback was the old culprit.
+                runCatching {
+                    camera.cameraControl.startFocusAndMetering(
+                        androidx.camera.core.FocusMeteringAction.Builder(
+                            view.meteringPointFactory.createPoint(0.5f, 0.5f),
+                            androidx.camera.core.FocusMeteringAction.FLAG_AF,
+                        ).setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS).build()
+                    )
+                }
             }
         }, ContextCompat.getMainExecutor(ctx))
 
         onDispose {
+            runCatching { scanner.close() }
             executor.shutdown()
             runCatching { future.get().unbindAll() }
         }
     }
 
     AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
-}
-
-private fun decode(image: ImageProxy): String? {
-    val plane = image.planes.firstOrNull() ?: return null
-    val buffer = plane.buffer
-    val width = image.width
-    val height = image.height
-    val rowStride = plane.rowStride
-    val data = ByteArray(rowStride * height)
-    buffer.get(data)
-
-    val source = PlanarYUVLuminanceSource(
-        data, rowStride, height, 0, 0, width.coerceAtMost(rowStride), height, false
-    )
-    return runCatching {
-        MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(source))).text
-    }.getOrNull()
 }

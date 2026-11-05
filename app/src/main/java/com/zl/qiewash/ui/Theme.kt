@@ -15,6 +15,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
+import com.zl.qiewash.R
 
 private val Mint = Color(0xFF006B58)
 
@@ -98,3 +104,19 @@ fun QieWashTheme(
     }
     MaterialTheme(colorScheme = scheme, shapes = AppShapes, content = content)
 }
+
+/**
+ * Roboto Flex subset (digits + colon) with the wght axis kept, so the countdown can
+ * actually morph between weights instead of snapping to the two static ones.
+ */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+val ClockFamily = FontFamily(
+    (200..900 step 50).map { w ->
+        Font(
+            R.font.clock_var,
+            weight = FontWeight(w),
+            style = FontStyle.Normal,
+            variationSettings = FontVariation.Settings(FontVariation.weight(w)),
+        )
+    }
+)

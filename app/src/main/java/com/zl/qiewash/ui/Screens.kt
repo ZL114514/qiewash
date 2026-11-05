@@ -91,6 +91,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -642,15 +643,15 @@ fun PlanScreen(
                 }
             } else {
             if (skus.size > 1) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    skus.forEachIndexed { i, s ->
-                        SegmentedButton(
-                            selected = s.skuId == sku?.skuId,
-                            onClick = { s.options.firstOrNull()?.let { onPick(s, it) } },
-                            shape = SegmentedButtonDefaults.itemShape(i, skus.size),
-                        ) { Text(s.name) }
-                    }
-                }
+                SegmentedRow(
+                    options = skus.map { it.skuId to it.name },
+                    isOn = { it == sku?.skuId },
+                    onPick = { id ->
+                        skus.firstOrNull { it.skuId == id }?.options?.firstOrNull()?.let { o ->
+                            onPick(skus.first { it.skuId == id }, o)
+                        }
+                    },
+                )
                 Spacer(Modifier.height(16.dp))
             }
 
@@ -1015,6 +1016,7 @@ fun SettingsScreen(
     diagPath: String,
     onSavePosition: (String, String) -> Unit,
     onRelocate: () -> Unit,
+    onWeightDemo: () -> Unit,
     onSpread: (Int) -> Unit,
     onImport: (String, String) -> Unit,
     onLogout: () -> Unit,
@@ -1096,6 +1098,8 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(10.dp))
                     OutlinedButton(onClick = onRelocate) { Text("重新定位") }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(onClick = onWeightDemo) { Text("可变字重示例") }
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("附近扫描半径", style = MaterialTheme.typography.bodyMedium)
@@ -1321,9 +1325,9 @@ private fun ActiveRunCard(
     val left = rawLeft.coerceAtLeast(0)
     val span = (run.endAt - run.startAt).coerceAtLeast(1L)
     val progress = (left.toFloat() / span).coerceIn(0f, 1f)
-    // M3E variable weight: lighter while there is time, heavier as the drum winds down.
+    // M3E variable weight: light while there is time, heavy as the drum winds down.
     val weight by animateFloatAsState(
-        targetValue = 420f + (1f - progress) * 380f,
+        targetValue = 320f + (1f - progress) * 580f,
         animationSpec = tween(600),
         label = "wght",
     )
@@ -1343,11 +1347,9 @@ private fun ActiveRunCard(
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MachineIcon("00", onContainer)
-            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     if (finished) "已完成 · 记得取衣" else "正在使用",
@@ -1409,15 +1411,15 @@ private fun SegmentedRow(
     // A tap can be shorter than one frame, so the morph is driven by an explicit
     // kick animation on click instead of following the press state.
     val morph = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
-    var kicked by remember { mutableStateOf(-1) }
-    fun kick(index: Int) {
-        kicked = index
-        scope.launch {
-            morph.snapTo(0f)
-            morph.animateTo(1f, tween(120))
-            morph.animateTo(0f, tween(240))
-        }
+    var kicked by remember { mutableIntStateOf(-1) }
+    var tick by remember { mutableIntStateOf(0) }
+    // Keyed on the click counter: LaunchedEffect cancels the previous run itself,
+    // so repeated taps always replay instead of getting stuck mid-animation.
+    LaunchedEffect(tick) {
+        if (tick == 0) return@LaunchedEffect
+        morph.snapTo(0f)
+        morph.animateTo(1f, tween(120))
+        morph.animateTo(0f, tween(240))
     }
     val joint = tight
     val hold by animateFloatAsState(
@@ -1450,7 +1452,8 @@ private fun SegmentedRow(
             val endR = if (i == options.lastIndex) big else joint
             Surface(
                 onClick = {
-                    kick(i)
+                    kicked = i
+                    tick++
                     onPick(value)
                 },
                 interactionSource = sources[i],
@@ -1465,19 +1468,3 @@ private fun SegmentedRow(
         }
     }
 }
-
-/**
- * Roboto Flex subset (digits + colon) with the wght axis kept, so the countdown can
- * actually morph between weights instead of snapping to the two static ones.
- */
-@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
-private val ClockFamily = FontFamily(
-    (200..900 step 50).map { w ->
-        Font(
-            R.font.clock_var,
-            weight = FontWeight(w),
-            style = FontStyle.Normal,
-            variationSettings = FontVariation.Settings(FontVariation.weight(w)),
-        )
-    }
-)

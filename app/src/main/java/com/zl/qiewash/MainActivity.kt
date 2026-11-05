@@ -39,6 +39,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.zl.qiewash.data.Session
 import com.zl.qiewash.ui.HomeScreen
+import com.zl.qiewash.ui.WeightDemoScreen
 import com.zl.qiewash.ui.LocationSetupScreen
 import com.zl.qiewash.ui.LoginScreen
 import com.zl.qiewash.ui.OrderDetailScreen
@@ -59,6 +60,7 @@ private object Route {
     const val ORDER_DETAIL = "order"
     const val SETTINGS = "settings"
     const val LOCATION = "location"
+    const val WEIGHT_DEMO = "weight_demo"
 }
 
 class MainActivity : ComponentActivity() {
@@ -238,6 +240,10 @@ private fun AppNav(vm: AppViewModel) {
             )
         }
 
+        composable(Route.WEIGHT_DEMO) {
+            WeightDemoScreen(onBack = { nav.popBackStack() })
+        }
+
         composable(Route.SETTINGS) {
             SettingsScreen(
                 phone = vm.phone,
@@ -248,6 +254,7 @@ private fun AppNav(vm: AppViewModel) {
                 diagPath = vm.diagPath,
                 onSavePosition = { a, b -> vm.setPosition(a, b) },
                 onRelocate = { vm.reopenLocation() },
+                onWeightDemo = { nav.navigate(Route.WEIGHT_DEMO) },
                 onSpread = { vm.pickSpread(it) },
                 onImport = { t, p -> vm.importToken(t, p) },
                 onLogout = { vm.logout() },
