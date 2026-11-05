@@ -66,7 +66,6 @@ fun WeightDemoScreen(onBack: () -> Unit) {
                 style = MaterialTheme.typography.displayLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 introKey = replay,
-                introFrom = 950f,
                 introMs = 1200,
             )
             Text(

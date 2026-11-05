@@ -15,12 +15,25 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import com.zl.qiewash.R
+import androidx.compose.animation.core.FastOutSlowInEasing
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.lerp
 import kotlin.math.roundToInt
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.rememberScrollState
@@ -414,7 +427,7 @@ private fun SectionHeader(
     onRefresh: (() -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
+        Modifier.fillMaxWidth().padding(top = 15.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -1384,8 +1397,8 @@ private fun segShape(index: Int, count: Int): androidx.compose.ui.graphics.Shape
 
 /**
  * M3E button group: at rest the segments merge into one container (outer ends round,
- * joints tight). While any segment is touched the joints open up and the pressed
- * segment widens, then it settles back — the same shape morph the official group does.
+ * joints tight). A tap plays a short scale pulse on the segment that was hit — scale
+ * instead of width so the click never fights the layout.
  */
 @Composable
 private fun SegmentedRow(
@@ -1396,38 +1409,12 @@ private fun SegmentedRow(
 ) {
     val big = 22.dp
     val tight = 8.dp
-    val sources = remember(options.size) { List(options.size) { MutableInteractionSource() } }
-    val pressed = sources.map { it.collectIsPressedAsState().value }
-    val anyPressed = pressed.any { it }
-
-    // A tap can be shorter than one frame, so the morph is driven by an explicit
-    // kick animation on click instead of following the press state.
     val morph = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
     var kicked by remember { mutableIntStateOf(-1) }
-    var tick by remember { mutableIntStateOf(0) }
-    // Keyed on the click counter: LaunchedEffect cancels the previous run itself,
-    // so repeated taps always replay instead of getting stuck mid-animation.
-    LaunchedEffect(tick) {
-        if (tick == 0) return@LaunchedEffect
-        morph.snapTo(0f)
-        morph.animateTo(1f, tween(120))
-        morph.animateTo(0f, tween(240))
-    }
-    val joint = tight
-    val hold by animateFloatAsState(
-        targetValue = if (anyPressed) 1f else 0f,
-        animationSpec = tween(90),
-        label = "hold",
-    )
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         options.forEachIndexed { i, (value, label) ->
             val on = isOn(value)
-            val pulse = when {
-                kicked == i -> morph.value
-                pressed[i] -> hold
-                else -> 0f
-            }
-            val grow = 1f + 0.14f * pulse
             val bg by animateColorAsState(
                 targetValue = if (on) MaterialTheme.colorScheme.secondaryContainer
                 else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1440,22 +1427,44 @@ private fun SegmentedRow(
                 animationSpec = tween(220),
                 label = "fg",
             )
-            val startR = if (i == 0) big else joint
-            val endR = if (i == options.lastIndex) big else joint
-            Surface(
-                onClick = {
-                    kicked = i
-                    tick++
-                    onPick(value)
-                },
-                interactionSource = sources[i],
-                shape = RoundedCornerShape(startR, endR, endR, startR),
-                color = bg,
-                modifier = Modifier.weight(grow).height(40.dp),
+            val startR = if (i == 0) big else tight
+            val endR = if (i == options.lastIndex) big else tight
+            val pulse = if (kicked == i) morph.value else 0f
+            Box(
+                Modifier
+                    .weight(1f + 0.16f * pulse)
+                    .height(40.dp)
+                    .clip(RoundedCornerShape(startR, endR, endR, startR))
+                    .background(bg)
+                    // Feedback starts on finger-down, so a long hold shows the pulse at
+                    // once; the selection only commits if the finger lifts inside.
+                    .pointerInput(value) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            kicked = i
+                            // Holding shows half of the morph; only a completed tap plays
+                            // the rest of it and commits the selection.
+                            scope.launch {
+                                morph.animateTo(0.5f, tween(120, easing = FastOutSlowInEasing))
+                            }
+                            if (waitForUpOrCancellation() != null) {
+                                scope.launch {
+                                    morph.animateTo(1f, tween(140, easing = FastOutSlowInEasing))
+                                    morph.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
+                                }
+                                onPick(value)
+                            } else {
+                                scope.launch { morph.animateTo(0f, tween(200)) }
+                            }
+                        }
+                    }
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        selected = on
+                    },
+                contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(label, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1)
-                }
+                Text(label, style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1)
             }
         }
     }

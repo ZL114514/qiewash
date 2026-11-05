@@ -30,20 +30,20 @@ fun ClockText(
     color: Color,
     modifier: Modifier = Modifier,
     introKey: Any? = null,
-    introFrom: Float = 950f,
-    introMs: Int = 340,
+    introMs: Int = 800,
 ) {
     val steady by animateFloatAsState(
         targetValue = weight,
         animationSpec = tween(600),
         label = "clockWeight",
     )
+    // Showcase sweep: starts 200 units heavier than the steady weight and eases back.
     val intro = remember { Animatable(0f) }
     LaunchedEffect(introKey) {
-        intro.snapTo(1f)
+        intro.snapTo(200f)
         intro.animateTo(0f, tween(introMs, easing = FastOutSlowInEasing))
     }
-    val shown = lerp(steady, introFrom, intro.value)
+    val shown = (steady + intro.value).coerceIn(200f, 950f)
     Text(
         text,
         modifier = modifier,
