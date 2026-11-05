@@ -109,6 +109,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -729,7 +730,6 @@ fun RunningScreen(
     device: Device?,
     orderNo: String,
     endAt: Long,
-    onDone: () -> Unit,
 ) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(endAt) {
@@ -738,8 +738,12 @@ fun RunningScreen(
             delay(1000)
         }
     }
-    val remain = ((endAt - now) / 1000).coerceAtLeast(0)
-    val text = "%02d:%02d".format(remain / 60, remain % 60)
+    // Negative = the paid window is over but the machine has not stopped yet.
+    val diff = (endAt - now) / 1000
+    val abs = kotlin.math.abs(diff)
+    val text = (if (diff < 0) "-" else "") + "%02d:%02d".format(abs / 60, abs % 60)
+    val minutesLeft = diff / 60f
+    val weight = (171f + 22.9f * minutesLeft).coerceIn(200f, 950f)
 
     Column(
         Modifier.fillMaxSize().padding(24.dp),
@@ -754,13 +758,17 @@ fun RunningScreen(
         Spacer(Modifier.height(12.dp))
         ClockText(
             text = text,
-            weight = 600f,
+            weight = weight,
             style = TextStyle(fontSize = 72.sp),
             color = MaterialTheme.colorScheme.primary,
             introKey = orderNo,
         )
         Text(
-            if (remain == 0L) "本次已结束，可以取衣" else "结束后自动停机计费",
+            when {
+                diff < 0 -> "已超时，机器尚未停机"
+                diff == 0L -> "本次已结束，可以取衣"
+                else -> "结束后自动停机计费"
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -777,10 +785,6 @@ fun RunningScreen(
                     Text(it, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-        }
-        Spacer(Modifier.height(28.dp))
-        Button(onClick = onDone, shape = QwShape.button, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-            Text("完成")
         }
     }
 }
@@ -1415,6 +1419,9 @@ private fun SegmentedRow(
     val morph = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var kicked by remember { mutableIntStateOf(-1) }
+    // pointerInput keeps its first coroutine, so a plain `onPick` call would use the
+    // selection value captured at first composition (double tap never reset to 全部).
+    val pick by rememberUpdatedState(onPick)
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val gap = 2.dp
         val slots = options.size.coerceAtLeast(1)
@@ -1463,7 +1470,7 @@ private fun SegmentedRow(
                                     morph.animateTo(1f, tween(140, easing = FastOutSlowInEasing))
                                     morph.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
                                 }
-                                onPick(value)
+                                pick(value)
                             } else {
                                 scope.launch { morph.animateTo(0f, tween(200)) }
                             }

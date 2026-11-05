@@ -126,7 +126,7 @@ private fun AppNav(vm: AppViewModel) {
             val left = run.endAt - System.currentTimeMillis()
             if (left <= 0) {
                 // Notification is done; the pill stays red for a few minutes as a nudge.
-                Notify.done(ctx, "${run.title} 已结束，记得取衣")
+                Notify.done(ctx, "${run.title} 已结束", dry = run.dry)
                 Notify.cancelEnd(ctx)
                 Notify.cancelLive(ctx)
                 kotlinx.coroutines.delay(AppViewModel.GRACE_MS)
@@ -271,7 +271,6 @@ private fun AppNav(vm: AppViewModel) {
                 device = vm.device,
                 orderNo = vm.orderNo,
                 endAt = vm.endAt,
-                onDone = { vm.finishRun() },
             )
         }
     }

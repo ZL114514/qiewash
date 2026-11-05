@@ -113,6 +113,11 @@ class AppViewModel : ViewModel() {
         else -> 4
     }
 
+    /** categoryCode 02 = dryer; good enough for wording the notification. */
+    private fun dryOf(goodsId: String, functionName: String = ""): Boolean =
+        devices.firstOrNull { it.goodsId == goodsId }?.categoryCode == "02" ||
+            functionName.contains("烘")
+
     private fun machineNo(name: String): Int =
         Regex("\\d+").find(name)?.value?.toIntOrNull() ?: Int.MAX_VALUE
 
@@ -207,6 +212,7 @@ class AppViewModel : ViewModel() {
         val goodsId: String,
         val endAt: Long,
         val startAt: Long = endAt,
+        val dry: Boolean = false,
     )
 
     var lat by mutableStateOf("")
@@ -495,6 +501,7 @@ class AppViewModel : ViewModel() {
                     goodsId = device?.goodsId.orEmpty(),
                     endAt = endAt,
                     startAt = endAt - mins * 60_000L,
+                    dry = dryOf(device?.goodsId.orEmpty(), sku?.name.orEmpty()),
                 )
                 activeRun = run
                 saveRun(run)
@@ -525,6 +532,7 @@ class AppViewModel : ViewModel() {
                 goodsId = session?.runGoodsId.orEmpty(),
                 endAt = saved,
                 startAt = session?.runStartAt ?: saved,
+                dry = dryOf(session?.runGoodsId.orEmpty(), session?.runTitle.orEmpty()),
             )
             val briefs = runCatching { repo.orders(1, 20) }.getOrDefault(emptyList())
             val live = briefs.firstOrNull { it.status == 2 }
@@ -540,6 +548,7 @@ class AppViewModel : ViewModel() {
                     goodsId = savedRun.goodsId.takeIf { it.isNotBlank() }.orEmpty(),
                     endAt = start + mins * 60_000L,
                     startAt = start,
+                    dry = dryOf(savedRun.goodsId, live.functionName),
                 )
                 activeRun = run
                 saveRun(run)

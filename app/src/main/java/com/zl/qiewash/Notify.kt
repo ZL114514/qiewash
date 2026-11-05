@@ -88,11 +88,11 @@ object Notify {
         NotificationManagerCompat.from(ctx).cancel(ID_LIVE)
     }
 
-    fun done(ctx: Context, text: String) {
+    fun done(ctx: Context, text: String, dry: Boolean = false) {
         ensureChannels(ctx)
         val n = NotificationCompat.Builder(ctx, CH_DONE)
             .setSmallIcon(R.drawable.ic_notify_wash)
-            .setContentTitle("洗完了")
+            .setContentTitle(if (dry) "烘干了" else "洗好了")
             .setContentText(text)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
